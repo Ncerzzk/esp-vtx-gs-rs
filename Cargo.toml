@@ -1,0 +1,12 @@
+[package]
+name = "esp-vtx-gs-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitfield = "0.14.0"
+pcap = "1.3.0"
+radiotap = "1.3.0"
+zfec-rs = "0.1.0"
