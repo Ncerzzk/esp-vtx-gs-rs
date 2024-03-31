@@ -261,6 +261,10 @@ impl CapHandler {
         self.blocks.remove(&block_index);
         Some(out)
     }
+
+    fn process_air2ground_packets(&mut self,data:Vec<u8>){
+        
+    }
 }
 
 /*
@@ -313,8 +317,8 @@ mod tests {
         cap_handler: &CapHandler,
         packet_len: Option<u32>,
         fec_packet_len: Option<u32>,
-    ) -> Option<(&u32, &Block)> {
-        cap_handler.blocks.iter().find(|(_, block)| {
+    ) -> Option<(u32, &Block)> {
+        let ret = cap_handler.blocks.iter().find(|(_, block)| {
             // if no condition provided, return one block
             let mut ret = true;
             if let Some(p_len) = packet_len{
@@ -324,7 +328,12 @@ mod tests {
                 ret &= block.fec_packets.len() == fec_len as usize;
             }
             ret
-        })
+        });
+        if ret.is_none(){
+            return None;
+        } else{
+            Some((ret.unwrap().0.clone(), ret.unwrap().1))
+        }
     }
 
     #[test]
@@ -345,13 +354,14 @@ mod tests {
     fn test_process_block() {
         let mut cap_handler = init_cap_and_recv_packets(20);
         let (idx, _) = find_block(&cap_handler, Some(2), None).unwrap();
-        assert!(cap_handler.process_block(*idx).is_some());
+        assert!(cap_handler.process_block(idx).is_some());
 
         let (idx, _) = find_block(&cap_handler, Some(1), Some(1)).unwrap();
-        assert!(cap_handler.process_block(*idx).is_some());
+        assert!(cap_handler.process_block(idx).is_some());
+        assert!(!cap_handler.blocks.contains_key(&idx));
 
         let (idx, _) = find_block(&cap_handler, Some(1), Some(0)).unwrap();
-        assert!(cap_handler.process_block(*idx).is_none());
+        assert!(cap_handler.process_block(idx).is_none());
     }
 
     #[test]
