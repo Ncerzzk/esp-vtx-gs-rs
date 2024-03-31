@@ -1,6 +1,8 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     hash::Hash,
+    mem::{size_of, MaybeUninit},
 };
 
 use bitfield::bitfield;
@@ -9,6 +11,7 @@ use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
 
 bitfield! {
+    #[derive(Clone)]
     struct VtxPacketHeader([u8]);
     impl Debug;
     u32;
@@ -35,7 +38,7 @@ enum Air2GroundPacketType {
 }
 
 #[repr(packed(1))]
-struct Air2GroundPacketHeader {
+struct Air2GroundFramePacketHeader {
     packet_type: Air2GroundPacketType,
     size: u32,
     pong: u8,
@@ -45,8 +48,63 @@ struct Air2GroundPacketHeader {
     frame_index: u32,
 }
 
+impl Debug for Air2GroundFramePacketHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let packet_type = match self.packet_type {
+            Air2GroundPacketType::Video => "Video",
+            Air2GroundPacketType::Telemetry => "Telem",
+        };
+        let resolution = match self.resolution {
+            Resolution::QVGA => "QVGA",
+            Resolution::CIF => "CIF",
+            Resolution::HVGA => "HVGA",
+            Resolution::VGA => "VGA",
+            Resolution::SVGA => "SVGA",
+            Resolution::XGA => "XGA",
+            Resolution::SXGA => "SXGA",
+            Resolution::UXGA => "UXGA",
+        };
+        let size = self.size;
+        let part_index = self.part_index;
+        let frame_index = self.frame_index;
+        f.debug_struct("Air2GroundFramePacketHeader")
+            .field("packet_type", &packet_type)
+            .field("size", &size)
+            .field("pong", &self.pong)
+            .field("crc", &self.crc)
+            .field("resolution", &resolution)
+            .field("part_index", &part_index)
+            .field("frame_index", &frame_index)
+            .finish()
+    }
+}
+
+struct Air2GroundFramePacket {
+    header: Air2GroundFramePacketHeader,
+    data: Vec<u8>,
+}
+
+impl Air2GroundFramePacket {
+    fn from_bytes(mut origin_data: Vec<u8>) -> Self {
+        let payload = origin_data.split_off(size_of::<Air2GroundFramePacketHeader>());
+        let mut header = MaybeUninit::<Air2GroundFramePacketHeader>::zeroed();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                origin_data.as_ptr() as *const Air2GroundFramePacketHeader,
+                header.as_mut_ptr(),
+                1,
+            );
+            Air2GroundFramePacket {
+                header: header.assume_init(),
+                data: payload,
+            }
+        }
+    }
+}
+
 const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802_11_RADIOTAP
 
+#[derive(Clone)]
 struct VtxPacket {
     data: Vec<u8>,
     header: VtxPacketHeader<Vec<u8>>,
@@ -54,16 +112,18 @@ struct VtxPacket {
 }
 
 impl VtxPacket {
-    fn from(payload: &[u8], fcs_enable: bool) -> Option<Self> {
+    fn from(payload: &[u8], fcs_enable: bool, fec_n: u32) -> Option<Self> {
         let header = VtxPacketHeader(payload[..6].to_vec());
-        let size = if fcs_enable {
-            header.size() - 4
-        } else {
-            header.size()
-        } as usize;
-        if payload.len() < size + 6 {
+
+        if header.packet_index() >= fec_n {
             return None;
         }
+        let size = if fcs_enable {
+            payload.len() - 4
+        } else {
+            payload.len()
+        } as usize;
+
         Some(VtxPacket {
             data: payload[6..size].to_vec(),
             header,
@@ -71,6 +131,8 @@ impl VtxPacket {
         })
     }
 }
+
+#[derive(Clone)]
 struct Block {
     packets: HashMap<u32, VtxPacket>,
     fec_packets: Vec<VtxPacket>,
@@ -86,9 +148,14 @@ impl Block {
         }
     }
 }
+
+struct Frame {
+    parts: HashMap<u8, Air2GroundFramePacket>,
+    frame_index: u32,
+}
 struct CapHandler {
     blocks: HashMap<u32, Block>,
-    frame_data: Vec<u8>,
+    frames: HashMap<u32, Frame>,
     fec_k: u32,
     fec_n: u32,
     fec: Fec,
@@ -98,7 +165,7 @@ impl CapHandler {
     fn new(fec_k: u32, fec_n: u32) -> Self {
         CapHandler {
             blocks: HashMap::new(),
-            frame_data: Vec::new(),
+            frames: HashMap::new(),
             fec_k,
             fec_n,
             fec: Fec::new(fec_k as usize, fec_n as usize).unwrap(),
@@ -118,7 +185,7 @@ impl CapHandler {
         - if radiotap.flags.unwrap().fcs { 4 } else { 0 };
         */
 
-        let vtx_packet = VtxPacket::from(payload, radiotap.flags.unwrap().fcs);
+        let vtx_packet = VtxPacket::from(payload, radiotap.flags.unwrap().fcs, self.fec_n);
         if vtx_packet.is_none() {
             return;
         }
@@ -155,13 +222,17 @@ impl CapHandler {
         }
     }
 
-    fn process_block(&mut self, block_index: u32)  -> Vec<u8>{
+    /*
+       process the block by index.
+       remove this block from blocks hashmap if it could be processed.
+    */
+    fn process_block(&mut self, block_index: u32) -> Option<Vec<u8>> {
         let block = self.blocks.get_mut(&block_index).unwrap();
 
         let out;
         if block.packets.len() == self.fec_k as usize {
             let mut entie_out = Vec::<u8>::with_capacity(1470 * self.fec_k as usize);
-            for i in 0..self.fec_k{
+            for i in 0..self.fec_k {
                 let mut packet = block.packets.remove(&i).unwrap();
                 entie_out.append(&mut packet.data);
             }
@@ -180,13 +251,15 @@ impl CapHandler {
                     packet.data,
                     packet.header.packet_index() as usize,
                 ));
+                chunks.sort_by(|a, b| a.index.cmp(&b.index));
             }
             let fec_out = self.fec.decode(&chunks, 0).unwrap();
             out = fec_out;
-        }else{
-            out = Vec::new();
+        } else {
+            return None;
         }
-        out
+        self.blocks.remove(&block_index);
+        Some(out)
     }
 }
 
@@ -206,11 +279,117 @@ fn main() {
 
     for (idx, block) in cap_handler.blocks {
         println!("block:{} ", idx);
-        for (p_idx, _) in block.packets {
-            println!("packet:{}", p_idx);
+        for (p_idx, p) in block.packets {
+            println!("packet:{} len:{}", p_idx, p.data.len());
         }
         for fec_packet in block.fec_packets {
             println!("fec packet:{}", fec_packet.header.packet_index());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::panic;
+
+    use pcap::Capture;
+
+    use super::*;
+
+    const fec_k: usize = 2;
+    const fec_n: usize = 3;
+
+    fn init_cap_and_recv_packets(num: usize) -> CapHandler {
+        let mut cap = pcap::Capture::from_file("/home/ncer/esp-vtx-gs-rs/cap").unwrap();
+        let mut cap_handler = CapHandler::new(fec_k as u32, fec_n as u32);
+        for _ in 0..num {
+            let packet = cap.next_packet().unwrap();
+            cap_handler.process_cap_packets(packet);
+        }
+        cap_handler
+    }
+
+    fn find_block(
+        cap_handler: &CapHandler,
+        packet_len: Option<u32>,
+        fec_packet_len: Option<u32>,
+    ) -> Option<(&u32, &Block)> {
+        cap_handler.blocks.iter().find(|(_, block)| {
+            // if no condition provided, return one block
+            let mut ret = true;
+            if let Some(p_len) = packet_len{
+                ret &= block.packets.len() == p_len as usize;
+            }
+            if let Some(fec_len) = fec_packet_len{
+                ret &= block.fec_packets.len() == fec_len as usize;
+            }
+            ret
+        })
+    }
+
+    #[test]
+    fn test_air2ground_packets_parse() {
+        let cap_handler = init_cap_and_recv_packets(20);
+        let (_, block) = cap_handler
+            .blocks
+            .iter()
+            .find(|(_, x)| x.packets.len() == 2)
+            .unwrap();
+
+        let packet = block.packets.get(&0).unwrap().clone();
+        let d = Air2GroundFramePacket::from_bytes(packet.data);
+        println!("{:?}", d.header);
+    }
+
+    #[test]
+    fn test_process_block() {
+        let mut cap_handler = init_cap_and_recv_packets(20);
+        let (idx, _) = find_block(&cap_handler, Some(2), None).unwrap();
+        assert!(cap_handler.process_block(*idx).is_some());
+
+        let (idx, _) = find_block(&cap_handler, Some(1), Some(1)).unwrap();
+        assert!(cap_handler.process_block(*idx).is_some());
+
+        let (idx, _) = find_block(&cap_handler, Some(1), Some(0)).unwrap();
+        assert!(cap_handler.process_block(*idx).is_none());
+    }
+
+    #[test]
+    fn test_fec_decode() {
+        let mut cap_handler = init_cap_and_recv_packets(20);
+
+        let (target_idx, target_block) = cap_handler
+            .blocks
+            .iter()
+            .find(|(_, block)| {
+                block.packets.len() == fec_k as usize
+                    && block.fec_packets.len() == (fec_n - fec_k) as usize
+            })
+            .unwrap();
+
+        let mut block_copy = target_block.clone();
+        let mut block_copy2 = target_block.clone();
+
+        let origin_out = cap_handler.process_block(target_idx.clone()).unwrap();
+
+        block_copy.packets.remove(&0).unwrap();
+        block_copy2.packets.remove(&1).unwrap();
+
+        cap_handler.blocks.insert(0, block_copy);
+        cap_handler.blocks.insert(1, block_copy2);
+
+        let new_out = cap_handler.process_block(0).unwrap();
+        let new_out2 = cap_handler.process_block(1).unwrap();
+
+        assert_eq!(origin_out.len(), new_out.len());
+        assert_eq!(origin_out.len(), new_out2.len());
+        println!("{:?}", &origin_out[..20]);
+        println!("{:?}", &new_out[..20]);
+        println!("{:?}", &origin_out[origin_out.len() - 20..]);
+        println!("{:?}", &new_out[new_out.len() - 20..]);
+        for i in 0..origin_out.len() {
+            assert_eq!(origin_out[i], new_out[i]);
+            assert_eq!(origin_out[i], new_out2[i]);
         }
     }
 }
