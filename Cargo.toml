@@ -10,3 +10,7 @@ bitfield = "0.14.0"
 pcap = "1.3.0"
 radiotap = "1.3.0"
 zfec-rs = "0.1.0"
+
+[[test]]  
+name = "send_a_frame"  
+harness = false 
