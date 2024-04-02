@@ -8,6 +8,7 @@ use bitfield::bitfield;
 use pcap::{Linktype, Packet};
 use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
+pub mod device;
 
 bitfield! {
     #[derive(Clone)]
@@ -172,23 +173,25 @@ impl Frame {
     }
 }
 pub struct CapHandler {
-    pub blocks: HashMap<u32, Block>,
+    pub blocks: BTreeMap<u32, Block>,
     pub frames: HashMap<u32, Frame>,
     pub fec_k: u32,
     pub fec_n: u32,
     fec: Fec,
     pub finish_frame_index: u32,
+    pub current_process_block_index:u32
 }
 
 impl CapHandler {
     pub fn new(fec_k: u32, fec_n: u32) -> Self {
         CapHandler {
-            blocks: HashMap::new(),
+            blocks: BTreeMap::new(),
             frames: HashMap::new(),
             fec_k,
             fec_n,
             fec: Fec::new(fec_k as usize, fec_n as usize).unwrap(),
             finish_frame_index: 0,
+            current_process_block_index:0
         }
     }
 
@@ -278,7 +281,11 @@ impl CapHandler {
         } else {
             return None;
         }
+        self.current_process_block_index = block_index;
         self.blocks.remove(&block_index);
+        while self.blocks.len()>5{
+            self.blocks.pop_first();
+        }
         Some(out)
     }
 
