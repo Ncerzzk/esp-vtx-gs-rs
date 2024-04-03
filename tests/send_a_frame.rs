@@ -1,6 +1,6 @@
 
 use esp_vtx_gs_rs::tests::{self, init_cap_and_recv_packets};
-use std::net::{UdpSocket, SocketAddr, Ipv4Addr};
+use std::{net::{UdpSocket, SocketAddr, Ipv4Addr}, fs::OpenOptions, io::Write};
 fn main(){
     let mut cap_handler = init_cap_and_recv_packets(40);
     let mut keys:Vec<u32> = cap_handler.blocks.keys().cloned().collect();
@@ -15,6 +15,9 @@ fn main(){
     let frame = cap_handler.frames.get(&cap_handler.finish_frame_index).unwrap();
     let data = frame.get_jpegdata();
     let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+
+    let mut file = OpenOptions::new().read(true).write(true).create(true).open("test.jpeg").unwrap();
+    file.write(&data).unwrap();
     
     let target =SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(),12345);
     loop {

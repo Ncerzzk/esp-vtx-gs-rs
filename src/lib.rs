@@ -249,6 +249,7 @@ impl CapHandler {
        process the block by index.
        remove this block from blocks hashmap if it could be processed.
     */
+    #[inline(always)]
     pub fn process_block(&mut self, block_index: u32) -> Option<Vec<u8>> {
         let block = self.blocks.get_mut(&block_index).unwrap();
 
@@ -283,10 +284,16 @@ impl CapHandler {
         }
         self.current_process_block_index = block_index;
         self.blocks.remove(&block_index);
+
+        Some(out)
+    }
+
+    pub fn process_block_with_fix_buffer(&mut self,block_index: u32) -> Option<Vec<u8>> {
+        let ret = self.process_block(block_index);
         while self.blocks.len()>5{
             self.blocks.pop_first();
         }
-        Some(out)
+        ret
     }
 
     pub fn process_air2ground_packets(&mut self, data: Vec<u8>) {
@@ -382,11 +389,24 @@ pub mod tests {
             let mut keys:Vec<u32> = cap_handler.blocks.keys().cloned().collect();
             keys.sort();
             for block_index in keys{
+                println!("{}",block_index);
                 if let Some(out) = cap_handler.process_block(block_index){
                     cap_handler.process_air2ground_packets(out);
                 }
             }
             assert_ne!(cap_handler.finish_frame_index , 0);
+        }
+
+        #[test]
+        fn test_process_block_with_buffer(){
+            let mut cap_hander = init_cap_and_recv_packets(40);
+            let mut keys:Vec<u32> = cap_hander.blocks.keys().cloned().collect();
+            keys.sort();
+            keys.reverse();
+
+            assert!(cap_hander.blocks.len() > 5);
+            cap_hander.process_block_with_fix_buffer(keys[0]);
+            assert!(cap_hander.blocks.len() == 5);
         }
 
         #[test]
