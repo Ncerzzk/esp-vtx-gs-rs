@@ -34,7 +34,7 @@ fn main(){
     client(play):
     gst-launch-1.0 udpsrc port=5600  ! application/x-rtp, payload=26 ! rtpjpegdepay ! jpegdec ! videoconvert ! autovideosink
     or 
-    ffplay rtp://127.0.0.1:5600
+    ffplay rtp://127.0.0.1:5600 -fflags nobuffer -flags low_delay -framedrop 
     
      */   
 }
