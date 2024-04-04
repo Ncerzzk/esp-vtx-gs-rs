@@ -1,15 +1,10 @@
 use std::{
-    collections::{HashMap, BTreeMap},
-    fmt::Debug,
-    mem::{size_of, MaybeUninit}, net::{UdpSocket, Ipv4Addr, SocketAddr}, cell::RefCell, sync::{atomic::AtomicI32, Arc, RwLock}, time::SystemTime,
+    net::{UdpSocket, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}, time::SystemTime,
 };
 
-use bitfield::bitfield;
 use clap::Parser;
 use esp_vtx_gs_rs::CapHandler;
-use pcap::{Linktype, Packet};
-use radiotap::Radiotap;
-use zfec_rs::{Chunk, Fec};
+use pcap::{Linktype};
 use esp_vtx_gs_rs::device::Device;
 
 #[derive(Parser)]
