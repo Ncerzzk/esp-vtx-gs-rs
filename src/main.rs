@@ -26,6 +26,31 @@ struct Cli{
     CapPacketHeader |  RadiotapHeader |  WLAN_IEEE_HEADER | VtxPacketHeader | Air2GroundPacketHeader | FramePayload
     A jpeg frame could be split to several air2ground packets.
 */
+
+/*
+    Do perf analyze:
+    1. install cargo-flamegraph
+
+    cargo install flamegraph
+
+    2. release build and run:
+
+    caro build --relase
+    then execute it by sudo
+
+    3. generate flamegraph:
+
+    sudo sysctl -w kernel.perf_event_paranoid=-1
+    sudo sysctl -p
+    sudo flamegraph [-o my_flamegraph.svg] --pid XXX
+
+    4. measure latency of gstreamer:
+
+    env GST_DEBUG="GST_TRACER:7"     GST_TRACERS="latency(flags=element+pipeline)" GST_DEBUG_FILE=./latency.log \
+    gst-launch-1.0 udpsrc port=12345 ! image/jpeg,width=200,height=200,framerate=30/1 ! rtpjpegpay mtu=1500 ! udpsink sync=false host=127.0.0.1 port=5600
+    
+
+ */
 fn main() {
     
     let args = Cli::parse();
@@ -66,13 +91,17 @@ fn main() {
         let mut last_time = std::time::SystemTime::now();
         loop{
             
-            cap_hander.process_cap_packets(wlan_dev.cap.next_packet().unwrap());
+            let packet = wlan_dev.cap.next_packet().unwrap();
+            //let st = std::time::SystemTime::now();
+            cap_hander.process_cap_packets(packet);
             let block_indexs:Vec<u32> = cap_hander.blocks.keys().rev().cloned().collect();
             for block_idx in block_indexs{
                 if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx){
                     cap_hander.process_air2ground_packets(complete_block);
                 }
             }
+
+            //println!("{}",st.elapsed().unwrap().as_nanos());
 
             if last_time.elapsed().unwrap().as_secs() >=1{
                 println!("fps:{}",count.read().unwrap());
