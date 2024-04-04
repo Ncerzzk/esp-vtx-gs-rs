@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, BTreeMap},
     fmt::Debug,
-    mem::{size_of, MaybeUninit}, net::{UdpSocket, Ipv4Addr, SocketAddr},
+    mem::{size_of, MaybeUninit}, net::{UdpSocket, Ipv4Addr, SocketAddr}, cell::RefCell, sync::{atomic::AtomicI32, Arc, RwLock}, time::SystemTime,
 };
 
 use bitfield::bitfield;
@@ -60,12 +60,31 @@ fn main() {
         let mut cap_hander = CapHandler::new(2,3);
         let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
         let target =SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(),args.port as u16);
+
+        let count: Arc<RwLock<u32>>  = Arc::new(RwLock::new(0));
+        let count2 = count.clone();
+        cap_hander.do_when_recv_new_frame(move |data|{
+            socket.send_to(&data, target).unwrap();
+            (*count2.write().unwrap()) += 1;
+        });
+
+        let mut last_time = std::time::SystemTime::now();
         loop{
+            
             cap_hander.process_cap_packets(wlan_dev.cap.next_packet().unwrap());
-            let (block_idx, _) = cap_hander.blocks.last_key_value().unwrap();
-            if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(*block_idx){
-                cap_hander.process_air2ground_packets(complete_block);
+            let block_indexs:Vec<u32> = cap_hander.blocks.keys().rev().cloned().collect();
+            for block_idx in block_indexs{
+                if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx){
+                    cap_hander.process_air2ground_packets(complete_block);
+                }
             }
+
+            if last_time.elapsed().unwrap().as_secs() >=1{
+                println!("fps:{}",count.read().unwrap());
+                *(count.write().unwrap()) = 0;
+                last_time = SystemTime::now();
+            }
+
         }
     }
 

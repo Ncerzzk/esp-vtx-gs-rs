@@ -7,6 +7,16 @@ pub struct Device {
     pub cap: Capture<Active>,
 }
 
+/*
+    change channel of device:
+    sudo ifconfig DEV_NAME down
+
+    sudo iwconfig DEV_NAME  channel XX
+    or
+    sudo iw dev DEV_NAME set channel XX
+
+    sudo ifconfig  DEV_NAME up
+*/
 impl Device {
     pub fn new(dev_name: String) -> Self {
         let mut cap: Option<Capture<Inactive>> = None;
@@ -29,7 +39,6 @@ impl Device {
             .snaplen(1800)
             .promisc(true)
             .rfmon(true)
-            .timeout(-1)
             .immediate_mode(true)
             .buffer_size(16000000);
         

@@ -1,7 +1,8 @@
 use std::{
-    collections::{HashMap, BTreeMap},
+    collections::{BTreeMap, HashMap},
     fmt::Debug,
     mem::{size_of, MaybeUninit},
+    time::SystemTime,
 };
 
 use bitfield::bitfield;
@@ -164,9 +165,9 @@ impl Frame {
         }
     }
 
-    pub fn get_jpegdata(&self) -> Vec<u8>{
+    pub fn get_jpegdata(&self) -> Vec<u8> {
         let mut ret = Vec::new();
-        for (_,air2ground_frame_packet) in &self.parts{
+        for (_, air2ground_frame_packet) in &self.parts {
             ret.append(&mut air2ground_frame_packet.data.clone());
         }
         ret
@@ -174,25 +175,50 @@ impl Frame {
 }
 pub struct CapHandler {
     pub blocks: BTreeMap<u32, Block>,
-    pub frames: HashMap<u32, Frame>,
+    pub frames: BTreeMap<u32, Frame>,
     pub fec_k: u32,
     pub fec_n: u32,
     fec: Fec,
     pub finish_frame_index: u32,
-    pub current_process_block_index:u32
+    pub current_process_block_index: u32,
+    callback: Option<Box<dyn FnMut(Vec<u8>)>>,
+    pub stats:ConnectStats
+}
+
+pub struct ConnectStats {
+    pub start_time: SystemTime,
+    pub broken_block_count: u32,
+}
+
+impl ConnectStats {
+    fn new() -> Self {
+        ConnectStats {
+            start_time: SystemTime::now(),
+            broken_block_count: 0,
+        }
+    }
 }
 
 impl CapHandler {
     pub fn new(fec_k: u32, fec_n: u32) -> Self {
         CapHandler {
             blocks: BTreeMap::new(),
-            frames: HashMap::new(),
+            frames: BTreeMap::new(),
             fec_k,
             fec_n,
             fec: Fec::new(fec_k as usize, fec_n as usize).unwrap(),
             finish_frame_index: 0,
-            current_process_block_index:0
+            current_process_block_index: 0,
+            callback: None,
+            stats:ConnectStats::new(),
         }
+    }
+
+    pub fn do_when_recv_new_frame<F>(&mut self, func: F)
+    where
+        F: FnMut(Vec<u8>) + Send + 'static,
+    {
+        self.callback = Some(Box::new(func))
     }
 
     pub fn process_cap_packets(&mut self, packet: Packet) {
@@ -251,8 +277,12 @@ impl CapHandler {
     */
     #[inline(always)]
     pub fn process_block(&mut self, block_index: u32) -> Option<Vec<u8>> {
-        let block = self.blocks.get_mut(&block_index).unwrap();
+        let block_ret = self.blocks.get_mut(&block_index);
+        if block_ret.is_none() {
+            return None;
+        }
 
+        let block = block_ret.unwrap();
         let out;
         if block.packets.len() == self.fec_k as usize {
             let mut entie_out = Vec::<u8>::with_capacity(1470 * self.fec_k as usize);
@@ -288,10 +318,10 @@ impl CapHandler {
         Some(out)
     }
 
-    pub fn process_block_with_fix_buffer(&mut self,block_index: u32) -> Option<Vec<u8>> {
+    pub fn process_block_with_fix_buffer(&mut self, block_index: u32) -> Option<Vec<u8>> {
         let ret = self.process_block(block_index);
-        while self.blocks.len()>5{
-            self.blocks.pop_first();
+        while self.blocks.len() > 5 {
+            self.blocks.pop_first().unwrap();
         }
         ret
     }
@@ -318,13 +348,20 @@ impl CapHandler {
             let last_part = (packet.header.part_index & 0x80) != 0;
             frame.parts.insert(real_part_index, packet);
 
-
-            if last_part{
+            if last_part {
                 frame.parts_count = real_part_index + 1; // update the parts_count when recv last part
             }
-            if frame.parts_count != 0 && frame.parts.len() == frame.parts_count as usize{
+            if frame.parts_count != 0 && frame.parts.len() == frame.parts_count as usize {
                 self.finish_frame_index = frame_index;
-                println!("recv a new frame!");
+                while let Some((index, frame)) = self.frames.pop_first() {
+                    if index == frame_index {
+                        if self.callback.is_some() {
+                            (self.callback.as_mut().unwrap())(frame.get_jpegdata());
+                        }
+                        break;
+                    }
+                }
+                //println!("recv a new frame!");
             }
         }
     }
@@ -335,7 +372,6 @@ impl CapHandler {
     CapPacketHeader |  RadiotapHeader |  WLAN_IEEE_HEADER | VtxPacketHeader | Air2GroundPacketHeader | FramePayload
     A jpeg frame could be split to several air2ground packets.
 */
-
 
 pub mod tests {
     use core::panic;
@@ -381,26 +417,48 @@ pub mod tests {
     }
 
     #[cfg(test)]
-    mod unittest{
+    mod unittest {
+        use std::sync::{Arc, RwLock};
+
         use super::*;
         #[test]
-        fn test_process_air2ground_packet(){
+        fn test_process_air2ground_packet() {
             let mut cap_handler = init_cap_and_recv_packets(40);
-            let mut keys:Vec<u32> = cap_handler.blocks.keys().cloned().collect();
+            let mut keys: Vec<u32> = cap_handler.blocks.keys().cloned().collect();
             keys.sort();
-            for block_index in keys{
-                println!("{}",block_index);
-                if let Some(out) = cap_handler.process_block(block_index){
+            for block_index in keys {
+                println!("{}", block_index);
+                if let Some(out) = cap_handler.process_block(block_index) {
                     cap_handler.process_air2ground_packets(out);
                 }
             }
-            assert_ne!(cap_handler.finish_frame_index , 0);
+            assert_ne!(cap_handler.finish_frame_index, 0);
         }
 
         #[test]
-        fn test_process_block_with_buffer(){
+        fn test_call_back() {
+            let mut cap_handler = init_cap_and_recv_packets(40);
+            let test_cnt = Arc::new(RwLock::new(0));
+            let test_cnt_copy = test_cnt.clone();
+            cap_handler.do_when_recv_new_frame(move |_| {
+                let mut copy = test_cnt_copy.write().unwrap();
+                *copy += 1;
+                println!("frame cnt:{}", *copy);
+            });
+            let keys: Vec<u32> = cap_handler.blocks.keys().cloned().collect();
+            for idx in keys {
+                if let Some(out) = cap_handler.process_block(idx) {
+                    cap_handler.process_air2ground_packets(out);
+                }
+            }
+            assert_eq!(cap_handler.frames.len(), 1);
+            assert!(*test_cnt.read().unwrap() != 0);
+        }
+
+        #[test]
+        fn test_process_block_with_buffer() {
             let mut cap_hander = init_cap_and_recv_packets(40);
-            let mut keys:Vec<u32> = cap_hander.blocks.keys().cloned().collect();
+            let mut keys: Vec<u32> = cap_hander.blocks.keys().cloned().collect();
             keys.sort();
             keys.reverse();
 
@@ -417,7 +475,7 @@ pub mod tests {
                 .iter()
                 .find(|(_, x)| x.packets.len() == 2)
                 .unwrap();
-    
+
             let packet = block.packets.get(&0).unwrap().clone();
             let d = Air2GroundFramePacket::from_bytes(packet.data);
             println!("{:?}", d.header);
@@ -428,11 +486,11 @@ pub mod tests {
             let mut cap_handler = init_cap_and_recv_packets(20);
             let (idx, _) = find_block(&cap_handler, Some(2), None).unwrap();
             assert!(cap_handler.process_block(idx).is_some());
-    
+
             let (idx, _) = find_block(&cap_handler, Some(1), Some(1)).unwrap();
             assert!(cap_handler.process_block(idx).is_some());
             assert!(!cap_handler.blocks.contains_key(&idx));
-    
+
             let (idx, _) = find_block(&cap_handler, Some(1), Some(0)).unwrap();
             assert!(cap_handler.process_block(idx).is_none());
         }
@@ -440,7 +498,7 @@ pub mod tests {
         #[test]
         fn test_fec_decode() {
             let mut cap_handler = init_cap_and_recv_packets(20);
-    
+
             let (target_idx, target_block) = cap_handler
                 .blocks
                 .iter()
@@ -449,21 +507,21 @@ pub mod tests {
                         && block.fec_packets.len() == (fec_n - fec_k) as usize
                 })
                 .unwrap();
-    
+
             let mut block_copy = target_block.clone();
             let mut block_copy2 = target_block.clone();
-    
+
             let origin_out = cap_handler.process_block(target_idx.clone()).unwrap();
-    
+
             block_copy.packets.remove(&0).unwrap();
             block_copy2.packets.remove(&1).unwrap();
-    
+
             cap_handler.blocks.insert(0, block_copy);
             cap_handler.blocks.insert(1, block_copy2);
-    
+
             let new_out = cap_handler.process_block(0).unwrap();
             let new_out2 = cap_handler.process_block(1).unwrap();
-    
+
             assert_eq!(origin_out.len(), new_out.len());
             assert_eq!(origin_out.len(), new_out2.len());
             println!("{:?}", &origin_out[..20]);
@@ -475,12 +533,5 @@ pub mod tests {
                 assert_eq!(origin_out[i], new_out2[i]);
             }
         }
-    
     }
-
-
-
-
-
-
 }
