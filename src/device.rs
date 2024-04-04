@@ -1,6 +1,5 @@
-use std::mem::MaybeUninit;
 
-use pcap::{Activated, Active, Capture, Inactive};
+use pcap::{Active, Capture, Inactive};
 
 pub struct Device {
     dev_name: String,

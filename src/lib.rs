@@ -6,7 +6,7 @@ use std::{
 };
 
 use bitfield::bitfield;
-use pcap::{Linktype, Packet};
+use pcap::{Packet};
 use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
 pub mod device;
@@ -374,9 +374,9 @@ impl CapHandler {
 */
 
 pub mod tests {
-    use core::panic;
+    
 
-    use pcap::Capture;
+    
 
     use super::*;
 
