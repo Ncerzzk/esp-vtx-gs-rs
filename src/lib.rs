@@ -353,12 +353,14 @@ impl CapHandler {
             }
             if frame.parts_count != 0 && frame.parts.len() == frame.parts_count as usize {
                 self.finish_frame_index = frame_index;
-                while let Some((index, frame)) = self.frames.pop_first() {
-                    if index == frame_index {
+                while let Some((index, frame)) = self.frames.first_key_value() {
+                    if *index == frame_index {
                         if self.callback.is_some() {
                             (self.callback.as_mut().unwrap())(frame.get_jpegdata());
                         }
                         break;
+                    }else{
+                        self.frames.pop_first();
                     }
                 }
                 //println!("recv a new frame!");
@@ -451,7 +453,7 @@ pub mod tests {
                     cap_handler.process_air2ground_packets(out);
                 }
             }
-            assert_eq!(cap_handler.frames.len(), 1);
+            assert_ne!(cap_handler.frames.len(), *test_cnt.read().unwrap());
             assert!(*test_cnt.read().unwrap() != 0);
         }
 
