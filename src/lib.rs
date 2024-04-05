@@ -6,10 +6,14 @@ use std::{
 };
 
 use bitfield::bitfield;
+use packet::Air2GroundFramePacket;
 use pcap::{Packet};
 use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
 pub mod device;
+
+mod packet;
+mod packet_h_bind;
 
 bitfield! {
     #[derive(Clone)]
@@ -36,71 +40,6 @@ enum Resolution {
 enum Air2GroundPacketType {
     Video,
     Telemetry,
-}
-
-#[repr(packed(1))]
-struct Air2GroundFramePacketHeader {
-    packet_type: Air2GroundPacketType,
-    size: u32,
-    pong: u8,
-    crc: u8,
-    resolution: Resolution,
-    part_index: u8, // if msb is 1, then is the last part
-    frame_index: u32,
-}
-
-impl Debug for Air2GroundFramePacketHeader {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let packet_type = match self.packet_type {
-            Air2GroundPacketType::Video => "Video",
-            Air2GroundPacketType::Telemetry => "Telem",
-        };
-        let resolution = match self.resolution {
-            Resolution::QVGA => "QVGA",
-            Resolution::CIF => "CIF",
-            Resolution::HVGA => "HVGA",
-            Resolution::VGA => "VGA",
-            Resolution::SVGA => "SVGA",
-            Resolution::XGA => "XGA",
-            Resolution::SXGA => "SXGA",
-            Resolution::UXGA => "UXGA",
-        };
-        let size = self.size;
-        let part_index = self.part_index;
-        let frame_index = self.frame_index;
-        f.debug_struct("Air2GroundFramePacketHeader")
-            .field("packet_type", &packet_type)
-            .field("size", &size)
-            .field("pong", &self.pong)
-            .field("crc", &self.crc)
-            .field("resolution", &resolution)
-            .field("part_index", &part_index)
-            .field("frame_index", &frame_index)
-            .finish()
-    }
-}
-
-struct Air2GroundFramePacket {
-    header: Air2GroundFramePacketHeader,
-    data: Vec<u8>,
-}
-
-impl Air2GroundFramePacket {
-    fn from_bytes(mut origin_data: Vec<u8>) -> Self {
-        let payload = origin_data.split_off(size_of::<Air2GroundFramePacketHeader>());
-        let mut header = MaybeUninit::<Air2GroundFramePacketHeader>::zeroed();
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                origin_data.as_ptr() as *const Air2GroundFramePacketHeader,
-                header.as_mut_ptr(),
-                1,
-            );
-            Air2GroundFramePacket {
-                header: header.assume_init(),
-                data: payload,
-            }
-        }
-    }
 }
 
 const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802_11_RADIOTAP
@@ -344,11 +283,11 @@ impl CapHandler {
             }
 
             let frame = self.frames.get_mut(&frame_index).unwrap();
-            let real_part_index = packet.header.part_index & 0x7f;
-            let last_part = (packet.header.part_index & 0x80) != 0;
+            let real_part_index = packet.header.part_index();
+            let last_part = packet.header.last_part();
             frame.parts.insert(real_part_index, packet);
 
-            if last_part {
+            if last_part != 0 {
                 frame.parts_count = real_part_index + 1; // update the parts_count when recv last part
             }
             if frame.parts_count != 0 && frame.parts.len() == frame.parts_count as usize {

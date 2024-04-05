@@ -9,7 +9,20 @@ The new project will not inherit all features from origin prject, actually I rem
 but for now, I prefer doing these work on Mobile platform.)
 
 ## Features
-- recieve the jpeg parts packets and do FEC
+- receieve the jpeg parts packets and do FEC
 - send data out through udp
 - multi card support[ongoing]
 - ground2air packets[ongoing]
+
+
+## Development related
+### bind generate
+this project rely on some struct defined in c headers(packet.h and structures.h) as it's not a good way to redefine them in Rust.
+
+so we use bindgen to generate the bind file:
+
+```
+bindgen packets.h -- -x c++ > bind_packet.rs
+```
+
+this file should be update and regenerated if c headers are edited in air sied.
