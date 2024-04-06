@@ -12,34 +12,20 @@ use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
 pub mod device;
 
+pub mod inject;
 mod packet;
-mod packet_h_bind;
+pub mod packet_h_bind;
 
+pub const VTX_PACKET_HEADER_SIZE:usize = 6;
 bitfield! {
     #[derive(Clone)]
     pub struct VtxPacketHeader([u8]);
     impl Debug;
     u32;
-    pub block_index, _: 23, 0;
-    pub packet_index, _: 31, 24;
+    pub block_index, set_block_index: 23, 0;
+    pub packet_index, set_packet_index: 31, 24;
     u16;
-    pub size,_: 47,32;
-}
-
-enum Resolution {
-    QVGA, //320x240
-    CIF,  //400x296
-    HVGA, //480x320
-    VGA,  //640x480
-    SVGA, //800x600
-    XGA,  //1024x768
-    SXGA, //1280x1024
-    UXGA, //1600x1200
-}
-
-enum Air2GroundPacketType {
-    Video,
-    Telemetry,
+    pub size,set_size: 47,32;
 }
 
 const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802_11_RADIOTAP
@@ -48,12 +34,11 @@ const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802
 pub struct VtxPacket {
     pub data: Vec<u8>,
     pub header: VtxPacketHeader<Vec<u8>>,
-    processed: bool, // show whether the packet has been processed or not
 }
 
 impl VtxPacket {
     fn from(payload: &[u8], fcs_enable: bool, fec_n: u32) -> Option<Self> {
-        let header = VtxPacketHeader(payload[..6].to_vec());
+        let header = VtxPacketHeader(payload[..VTX_PACKET_HEADER_SIZE].to_vec());
 
         if header.packet_index() >= fec_n {
             return None;
@@ -65,9 +50,8 @@ impl VtxPacket {
         } as usize;
 
         Some(VtxPacket {
-            data: payload[6..size].to_vec(),
+            data: payload[VTX_PACKET_HEADER_SIZE..size].to_vec(),
             header,
-            processed: false,
         })
     }
 }
@@ -315,18 +299,14 @@ impl CapHandler {
 */
 
 pub mod tests {
-    
-
-    
-
     use super::*;
 
-    const fec_k: usize = 2;
-    const fec_n: usize = 3;
+    const FEC_K: usize = 2;
+    const FEC_N: usize = 3;
 
     pub fn init_cap_and_recv_packets(num: usize) -> CapHandler {
         let mut cap = pcap::Capture::from_file("/home/ncer/esp-vtx-gs-rs/cap").unwrap();
-        let mut cap_handler = CapHandler::new(fec_k as u32, fec_n as u32);
+        let mut cap_handler = CapHandler::new(FEC_K as u32, FEC_N as u32);
         for _ in 0..num {
             let packet = cap.next_packet().unwrap();
             cap_handler.process_cap_packets(packet);
@@ -444,8 +424,8 @@ pub mod tests {
                 .blocks
                 .iter()
                 .find(|(_, block)| {
-                    block.packets.len() == fec_k as usize
-                        && block.fec_packets.len() == (fec_n - fec_k) as usize
+                    block.packets.len() == FEC_K as usize
+                        && block.fec_packets.len() == (FEC_N - FEC_K) as usize
                 })
                 .unwrap();
 

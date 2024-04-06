@@ -6,6 +6,9 @@ pub struct Device {
     pub cap: Capture<Active>,
 }
 
+unsafe impl Sync for Device{}
+unsafe impl Send for Device{}
+
 /*
     change channel of device:
     sudo ifconfig DEV_NAME down
