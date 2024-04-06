@@ -7,6 +7,7 @@ use std::{
 
 use bitfield::bitfield;
 use packet::Air2GroundFramePacket;
+use packet_h_bind::WLAN_IEEE_HEADER_SIZE;
 use pcap::{Packet};
 use radiotap::Radiotap;
 use zfec_rs::{Chunk, Fec};
@@ -28,7 +29,8 @@ bitfield! {
     pub size,set_size: 47,32;
 }
 
-const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802_11_RADIOTAP
+// const WLAN_IEEE_HEADER_LEN: usize = 24; // only when the cap linktype is IEEE802_11_RADIOTAP
+// use WLAN_IEEE_HEADER_SIZE in packet_h_bind instead.
 
 #[derive(Clone)]
 pub struct VtxPacket {
@@ -149,7 +151,7 @@ impl CapHandler {
         if radiotap.flags.unwrap().bad_fcs {
             panic!("bad fcs!");
         }
-        let payload = &packet.data[radiotap.header.length + WLAN_IEEE_HEADER_LEN..];
+        let payload = &packet.data[radiotap.header.length + WLAN_IEEE_HEADER_SIZE..];
         /*
         let payload_valid_len = packet.header.len  // 1540
         - radiotap.header.length as u32 // 36
@@ -301,8 +303,8 @@ impl CapHandler {
 pub mod tests {
     use super::*;
 
-    const FEC_K: usize = 2;
-    const FEC_N: usize = 3;
+    pub const FEC_K: usize = 2;
+    pub const FEC_N: usize = 3;
 
     pub fn init_cap_and_recv_packets(num: usize) -> CapHandler {
         let mut cap = pcap::Capture::from_file("/home/ncer/esp-vtx-gs-rs/cap").unwrap();
