@@ -96,7 +96,7 @@ fn main() {
         let wlan_dev_tx = wlan_dev.clone();
         std::thread::spawn(move ||{
             let config = Ground2Air_Config_Packet::default();
-            let mut inject_handler = InjectHandler::new(2,3);
+            let mut inject_handler = InjectHandler::new(2,6);
             loop{
                 let mut wlan_dev = wlan_dev_tx.write().unwrap();
                 let push_ret = inject_handler.push_ground2air_config_packet(&config);

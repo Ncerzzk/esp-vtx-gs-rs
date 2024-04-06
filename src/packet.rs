@@ -122,7 +122,7 @@ impl Default for Ground2Air_Config_Packet {
             dvr_record: false,
             camera: Default::default(),
         };
-
+        ret._base.size = std::mem::size_of::<Self>() as u32;
         ret.update_crc();
         ret
     }
