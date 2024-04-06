@@ -167,6 +167,8 @@ mod tests {
             let (mut chunks, pad) = fec.encode(&a).unwrap();
             chunks.remove(2);
             chunks.remove(4);
+            chunks.remove(1);
+            chunks.remove(0);
 
             let decode = fec.decode(&chunks, pad).unwrap();
             for i in 0..decode.len() {

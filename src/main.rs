@@ -20,8 +20,8 @@ struct Cli {
     port: u32,
 
     // control port
-    #[arg(long, default_value_t = 5000)]
-    control_port: u32,
+    #[arg(long)]
+    control_port: Option<u32>,
 
     #[arg(short, long)]
     test_file: Option<String>,
@@ -93,21 +93,24 @@ fn main() {
             (*count2.write().unwrap()) += 1;
         });
 
-        let wlan_dev_tx = wlan_dev.clone();
-        std::thread::spawn(move ||{
-            let config = Ground2Air_Config_Packet::default();
-            let mut inject_handler = InjectHandler::new(2,6);
-            loop{
-                let mut wlan_dev = wlan_dev_tx.write().unwrap();
-                let push_ret = inject_handler.push_ground2air_config_packet(&config);
-                for i in push_ret{
-                    wlan_dev.cap.sendpacket(i).unwrap();
+
+        if args.control_port.is_some(){
+            let wlan_dev_tx = wlan_dev.clone();
+            std::thread::spawn(move ||{
+                let config = Ground2Air_Config_Packet::default();
+                let mut inject_handler = InjectHandler::new(2,6);
+                loop{
+                    let mut wlan_dev = wlan_dev_tx.write().unwrap();
+                    let push_ret = inject_handler.push_ground2air_config_packet(&config);
+                    for i in push_ret{
+                        wlan_dev.cap.sendpacket(i).unwrap();
+                    }
+                    drop(wlan_dev);
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                 }
-                drop(wlan_dev);
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            
-        });
+            });
+        }
+
 
         let mut last_time = std::time::SystemTime::now();
         loop {
