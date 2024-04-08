@@ -1,7 +1,7 @@
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::{Arc, RwLock},
-    time::SystemTime,
+    time::SystemTime, str::FromStr,
 };
 
 use clap::Parser;
@@ -22,6 +22,10 @@ struct Cli {
     // control port
     #[arg(long)]
     control_port: Option<u32>,
+
+    // target ip
+    #[arg(long,default_value = "127.0.0.1")]
+    target_ip: String,
 
     #[arg(short, long)]
     test_file: Option<String>,
@@ -84,7 +88,9 @@ fn main() {
         let wlan_dev = Arc::new(RwLock::new(Device::new(dev)));
         let mut cap_hander = CapHandler::new(2, 3);
         let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
-        let target = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), args.port as u16);
+        
+        let target_ip = Ipv4Addr::from_str(&args.target_ip.as_str()).unwrap();
+        let target = SocketAddr::new(target_ip.into(), args.port as u16);
 
         let count: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
         let count2 = count.clone();
