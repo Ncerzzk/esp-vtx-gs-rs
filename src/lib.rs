@@ -106,7 +106,7 @@ pub struct CapHandler {
     fec: Fec,
     pub finish_frame_index: u32,
     pub current_process_block_index: u32,
-    callback: Option<Box<dyn FnMut(Vec<u8>)>>,
+    callback: Option<Box<dyn FnMut(Frame)>>,
     pub stats:ConnectStats
 }
 
@@ -141,7 +141,7 @@ impl CapHandler {
 
     pub fn do_when_recv_new_frame<F>(&mut self, func: F)
     where
-        F: FnMut(Vec<u8>) + Send + 'static,
+        F: FnMut(Frame) + Send + 'static,
     {
         self.callback = Some(Box::new(func))
     }
@@ -251,7 +251,7 @@ impl CapHandler {
         ret
     }
 
-    pub fn process_air2ground_packets(&mut self, data: Vec<u8>) -> Result<(),()> {
+    pub fn process_air2ground_packets(&mut self, data: Vec<u8>) {
         assert_eq!(data.len() % 1470, 0);
         let mut rest_data = data;
         while rest_data.len() >= 1470 {
@@ -278,20 +278,14 @@ impl CapHandler {
             }
             if frame.parts_count != 0 && frame.parts.len() == frame.parts_count as usize {
                 self.finish_frame_index = frame_index;
-                while let Some((index, frame)) = self.frames.first_key_value() {
-                    if *index == frame_index {
-                        if self.callback.is_some() {
-                            (self.callback.as_mut().unwrap())(frame.get_jpegdata());
-                        }
-                        break;
-                    }else{
-                        self.frames.pop_first();
-                    }
+                if self.callback.is_some() {
+                    (self.callback.as_mut().unwrap())(self.frames.remove(&self.finish_frame_index).unwrap());
+                    self.frames.clear();
                 }
-                return Ok(());
+                // if self.callback is None, then the frame will not be poped out
+                // let's keep all the frame when no callback apply
             }
         }
-        return Err(());
     }
 }
 

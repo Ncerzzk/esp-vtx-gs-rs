@@ -1,11 +1,11 @@
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
-    sync::{Arc, RwLock},
-    time::SystemTime, str::FromStr,
+    sync::{Arc, RwLock, Condvar, Mutex},
+    time::SystemTime, str::FromStr, collections::VecDeque,
 };
 
 use clap::Parser;
-use esp_vtx_gs_rs::{device::Device, packet_h_bind::Ground2Air_Config_Packet, inject::InjectHandler};
+use esp_vtx_gs_rs::{device::Device, packet_h_bind::Ground2Air_Config_Packet, inject::InjectHandler, Frame};
 use esp_vtx_gs_rs::CapHandler;
 use pcap::Linktype;
 
@@ -72,9 +72,27 @@ fn main() {
 
         let count: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
         let count2 = count.clone();
-        cap_hander.do_when_recv_new_frame(move |data| {
-            socket.send_to(&data, target).unwrap();
+
+        let send_frames :Arc<Mutex<VecDeque<Frame>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let send_frames_push = send_frames.clone();
+        let cond= Arc::new(Condvar::new());
+        let cond_push = cond.clone();
+        
+        cap_hander.do_when_recv_new_frame(move |frame| {
+            let mut vec = send_frames_push.lock().unwrap();
+            vec.push_back(frame);
+            cond_push.notify_all();
             (*count2.write().unwrap()) += 1;
+        });
+
+        std::thread::spawn(move ||{
+            loop{
+                let mut vec = send_frames.lock().unwrap();
+                if let Some(frame) = vec.pop_back(){
+                    socket.send_to(&frame.get_jpegdata(),target).unwrap();
+                }
+                drop(cond.wait(vec));
+            }
         });
 
 
@@ -106,10 +124,7 @@ fn main() {
             let block_indexs: Vec<u32> = cap_hander.blocks.keys().rev().cloned().collect();
             for block_idx in block_indexs {
                 if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx) {
-                    if cap_hander.process_air2ground_packets(complete_block).is_ok(){
-                        // if we have handled a compelete frame, break early
-                        break;
-                    }
+                    cap_hander.process_air2ground_packets(complete_block);
                 }
             }
 
