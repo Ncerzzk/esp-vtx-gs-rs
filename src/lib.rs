@@ -251,7 +251,7 @@ impl CapHandler {
         ret
     }
 
-    pub fn process_air2ground_packets(&mut self, data: Vec<u8>) {
+    pub fn process_air2ground_packets(&mut self, data: Vec<u8>) -> Result<(),()> {
         assert_eq!(data.len() % 1470, 0);
         let mut rest_data = data;
         while rest_data.len() >= 1470 {
@@ -288,9 +288,10 @@ impl CapHandler {
                         self.frames.pop_first();
                     }
                 }
-                //println!("recv a new frame!");
+                return Ok(());
             }
         }
+        return Err(());
     }
 }
 

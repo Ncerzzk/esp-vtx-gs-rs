@@ -27,8 +27,6 @@ struct Cli {
     #[arg(long,default_value = "127.0.0.1")]
     target_ip: String,
 
-    #[arg(short, long)]
-    test_file: Option<String>,
 }
 
 /*
@@ -63,26 +61,6 @@ struct Cli {
 */
 fn main() {
     let args = Cli::parse();
-
-    if let Some(test_file) = args.test_file {
-        let mut cap = pcap::Capture::from_file("/home/ncer/esp-vtx-gs-rs/cap").unwrap();
-        let mut cap_handler = CapHandler::new(2, 3);
-        assert_eq!(cap.get_datalink(), Linktype::IEEE802_11_RADIOTAP);
-        for i in 0..10 {
-            let packet = cap.next_packet().unwrap();
-            cap_handler.process_cap_packets(packet);
-        }
-
-        for (idx, block) in cap_handler.blocks {
-            println!("block:{} ", idx);
-            for (p_idx, p) in block.packets {
-                println!("packet:{} len:{}", p_idx, p.data.len());
-            }
-            for fec_packet in block.fec_packets {
-                println!("fec packet:{}", fec_packet.header.packet_index());
-            }
-        }
-    }
 
     if let Some(dev) = args.dev {
         let wlan_dev = Arc::new(RwLock::new(Device::new(dev)));
@@ -122,17 +100,18 @@ fn main() {
         loop {
             let mut wlan_dev_unwrap = wlan_dev.write().unwrap();
             let packet = wlan_dev_unwrap.cap.next_packet().unwrap();   // TODO: change this block action to epoll 
-            //let st = std::time::SystemTime::now();
+
             cap_hander.process_cap_packets(packet);
             drop(wlan_dev_unwrap);
             let block_indexs: Vec<u32> = cap_hander.blocks.keys().rev().cloned().collect();
             for block_idx in block_indexs {
                 if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx) {
-                    cap_hander.process_air2ground_packets(complete_block);
+                    if cap_hander.process_air2ground_packets(complete_block).is_ok(){
+                        // if we have handled a compelete frame, break early
+                        break;
+                    }
                 }
             }
-
-            //println!("{}",st.elapsed().unwrap().as_nanos());
 
             if last_time.elapsed().unwrap().as_secs() >= 1 {
                 println!("fps:{}", count.read().unwrap());
