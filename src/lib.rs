@@ -245,8 +245,14 @@ impl CapHandler {
 
     pub fn process_block_with_fix_buffer(&mut self, block_index: u32) -> Option<Vec<u8>> {
         let ret = self.process_block(block_index);
-        while self.blocks.len() > 5 {
-            self.blocks.pop_first().unwrap();
+        while let Some(x) = self.blocks.first_key_value(){
+            if *x.0 <= block_index - 2{
+                self.blocks.pop_first().unwrap();
+                // we are processing the "block_index" block
+                // reserve a block as buffer
+            }else{
+                break
+            }
         }
         ret
     }

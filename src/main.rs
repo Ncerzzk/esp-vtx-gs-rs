@@ -61,7 +61,7 @@ struct Cli {
 */
 fn main() {
     let args = Cli::parse();
-
+    
     if let Some(dev) = args.dev {
         let wlan_dev = Arc::new(RwLock::new(Device::new(dev)));
         let mut cap_hander = CapHandler::new(2, 3);
@@ -88,7 +88,7 @@ fn main() {
         std::thread::spawn(move ||{
             loop{
                 let mut vec = send_frames.lock().unwrap();
-                if let Some(frame) = vec.pop_back(){
+                if let Some(frame) = vec.pop_front(){
                     socket.send_to(&frame.get_jpegdata(),target).unwrap();
                 }
                 drop(cond.wait(vec));
@@ -121,7 +121,7 @@ fn main() {
 
             cap_hander.process_cap_packets(packet);
             drop(wlan_dev_unwrap);
-            let block_indexs: Vec<u32> = cap_hander.blocks.keys().rev().cloned().collect();
+            let block_indexs: Vec<u32> = cap_hander.blocks.keys().cloned().collect();
             for block_idx in block_indexs {
                 if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx) {
                     cap_hander.process_air2ground_packets(complete_block);
