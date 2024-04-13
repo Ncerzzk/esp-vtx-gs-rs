@@ -11,13 +11,7 @@ unsafe impl Send for Device{}
 
 /*
     change channel of device:
-    sudo ifconfig DEV_NAME down
-
-    sudo iwconfig DEV_NAME  channel XX
-    or
-    sudo iw dev DEV_NAME set channel XX
-
-    sudo ifconfig  DEV_NAME up
+    refer scripts/set_netcard.sh
 */
 impl Device {
     pub fn new(dev_name: String) -> Self {
@@ -46,8 +40,7 @@ impl Device {
         
         let mut active_cap = cap.open().unwrap();
 
-        active_cap.filter("ether[0x0a:4]==0x11223344 && ether[0x0e:2] == 0x5566", false).unwrap();
-
+        active_cap.filter("ether[0x0a:4]==0x11223344 && ether[0x0e:2] == 0x5566", true).unwrap();
         Device {
             dev_name,
             cap: active_cap,

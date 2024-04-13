@@ -20,3 +20,7 @@ harness = false
 [[bench]]
 name = "cap_handle"
 harness = false
+
+[[bench]]
+name = "packet_cnt"
+harness = false
