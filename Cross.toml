@@ -1,0 +1,9 @@
+[build]
+build-std = true                              # do not build the std library. has precedence over xargo
+xargo = false                                   # enable the use of xargo by default
+zig = false                                    # do not use zig cc for the builds
+default-target = "armv7-unknown-linux-gnueabihf"    # or aarch64-unknown-linux-gnu
+pre-build = [                                  # additional commands to run prior to building the package
+    "dpkg --add-architecture $CROSS_DEB_ARCH", 
+    "apt-get update && apt-get --assume-yes install libpcap0.8-dev:$CROSS_DEB_ARCH"
+]    
