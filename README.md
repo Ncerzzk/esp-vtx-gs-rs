@@ -11,9 +11,24 @@ but for now, I prefer doing these work on Mobile platform.)
 ## Features
 - receieve the jpeg parts packets and do FEC
 - send data out through udp
+- ground2air packets
 - multi card support[ongoing]
-- ground2air packets[ongoing]
 
+### Send Data Through Udp
+you can set the target ip by setting option argument:--target_ip
+
+for example:
+```
+./esp-vtx-gs-rs -d DEVICE_NAME --target_ip 192.168.2.101
+```
+
+if you want to send jpeg data to mobile phone to work with:
+https://github.com/Ncerzzk/ESPVTxAndroid
+
+- connect mobile phone with the ground station board(PC or some other boards)
+- mobile phone share internnet with ground station by usb
+- check the mobile phone ip in ground station: `netstat -rn`
+- set target_ip to the ip of mobile
 
 ## Development related
 ### bind generate
