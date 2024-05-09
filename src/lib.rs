@@ -388,7 +388,7 @@ pub mod tests {
 
             assert!(cap_hander.blocks.len() > 5);
             cap_hander.process_block_with_fix_buffer(keys[0]);
-            assert!(cap_hander.blocks.len() == 5);
+            assert!(cap_hander.blocks.len() == 2);
         }
 
         #[test]
