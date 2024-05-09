@@ -123,7 +123,7 @@ fn main() {
             drop(wlan_dev_unwrap);
             let block_indexs: Vec<u32> = cap_hander.blocks.keys().cloned().collect();
             for block_idx in block_indexs {
-                if let Some(complete_block) = cap_hander.process_block_with_fix_buffer(block_idx) {
+                if let Some(complete_block) = cap_hander.process_block(block_idx) {
                     cap_hander.process_air2ground_packets(complete_block);
                 }
             }

@@ -246,7 +246,7 @@ impl CapHandler {
     pub fn process_block_with_fix_buffer(&mut self, block_index: u32) -> Option<Vec<u8>> {
         let ret = self.process_block(block_index);
         while let Some(x) = self.blocks.first_key_value(){
-            if *x.0 <= block_index - 2{
+            if *x.0 <=  (if block_index >=2  { block_index - 2 }  else {0}) {
                 self.blocks.pop_first().unwrap();
                 // we are processing the "block_index" block
                 // reserve a block as buffer
@@ -267,7 +267,10 @@ impl CapHandler {
 
             let frame_index = packet.header.frame_index;
             if frame_index < self.finish_frame_index {
-                continue;
+                // the air side may be restart, so clear blocks and restart
+                self.blocks.clear();
+                self.finish_frame_index = 0;
+                return ;
             }
 
             if !self.frames.contains_key(&frame_index) {
