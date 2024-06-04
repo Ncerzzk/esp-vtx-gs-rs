@@ -243,19 +243,6 @@ impl CapHandler {
         Some(out)
     }
 
-    pub fn process_block_with_fix_buffer(&mut self, block_index: u32) -> Option<Vec<u8>> {
-        let ret = self.process_block(block_index);
-        while let Some(x) = self.blocks.first_key_value(){
-            if *x.0 <=  (if block_index >=2  { block_index - 2 }  else {0}) {
-                self.blocks.pop_first().unwrap();
-                // we are processing the "block_index" block
-                // reserve a block as buffer
-            }else{
-                break
-            }
-        }
-        ret
-    }
 
     pub fn process_air2ground_packets(&mut self, data: Vec<u8>) {
         assert_eq!(data.len() % 1470, 0);
@@ -293,6 +280,16 @@ impl CapHandler {
                 }
                 // if self.callback is None, then the frame will not be poped out
                 // let's keep all the frame when no callback apply
+
+                while let Some(x) = self.blocks.first_key_value(){
+                    if *x.0 <=  self.current_process_block_index {
+                        self.blocks.pop_first().unwrap();
+                    }else{
+                        break
+                    }
+                } 
+                // pop the old and useless blocks
+
             }
         }
     }
